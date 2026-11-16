@@ -1,0 +1,665 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Selection Sentences</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+/* Layout: one fixed screen. Bar on top, graph fills the top half, the question panel fills the bottom half and swipes left when done. Light only, square corners. */
+:root {
+  --bg: #E9EEEA; --surface: #FFFFFF; --ink: #18211D; --muted: #56625B; --line: #B4C0B7; --grid: #DDE4DE;
+  --accent: #1E5A86; --accent-ink: #FFFFFF; --accent-soft: #D7E5F0;
+  --good: #2A7448; --good-soft: #D8ECDF; --bad: #AF2B1F; --bad-soft: #F6DBD7;
+  --hot: #C8501A; --s1: #1E5A86; --s2: #C8501A;
+  --font: "Atkinson Hyperlegible", Verdana, "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.35 var(--font); overflow: hidden; overscroll-behavior: none;
+  padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px)); padding-block: 6px; }
+button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border-radius: 0; }
+button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--hot); outline-offset: 2px; }
+#app { height: 100%; max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) minmax(0, 1.08fr); gap: 6px; }
+
+#bar { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+#bar h1 { margin: 0; font-size: clamp(16px, 4.4vw, 20px); white-space: nowrap; }
+.prog { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pbar { flex: 1; height: 10px; background: var(--surface); border: 1px solid var(--line); min-width: 30px; }
+.pbar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+.count { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 14px; }
+.btn { border: 2px solid var(--line); background: var(--surface); padding: 6px 14px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.fox { background: var(--hot); border-color: var(--hot); color: #fff; padding: 4px 10px; }
+.btn:disabled { opacity: .45; cursor: default; }
+@media (max-width: 520px) { .pbar { display: none; } .prog { justify-content: flex-end; } #score .lbl { display: none; } #score::before { content: "\2713  "; color: var(--good); } #foxBtn .long { display: none; } }
+
+/* graph */
+#graph { background: var(--surface); border: 1px solid var(--line); display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; transition: opacity .3s; }
+#graph.fade { opacity: 0; }
+.ghead { padding: 6px 10px 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.ghead h2 { margin: 0; font-size: clamp(15px, 4vw, 18px); }
+.ghead p { margin: 0; font-size: clamp(13px, 3.6vw, 15px); color: var(--ink); }
+.ghead p b { color: var(--hot); }
+#plot { min-height: 0; min-width: 0; }
+#plot svg { display: block; }
+#plot text { font-family: var(--font); }
+
+/* question deck */
+#deck { position: relative; overflow: hidden; min-height: 0; }
+.panel { position: absolute; inset: 0; background: var(--surface); border: 2px solid var(--ink); display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px; padding: 8px 12px 10px;
+  transition: transform .45s cubic-bezier(.6, 0, .4, 1), opacity .45s; }
+.panel.out { transform: translateX(-115%); opacity: .3; }
+.panel.in { transform: translateX(115%); transition: none; }
+.qhead { display: grid; gap: 2px; }
+.qtag { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); }
+.qp { margin: 0; font-size: clamp(15px, 4.2vw, 18px); font-weight: 700; text-wrap: balance; }
+.body { min-height: 0; display: grid; align-content: safe center; gap: 8px; }
+@media (max-width: 700px) {
+  #app.tall { grid-template-rows: auto minmax(0, .44fr) minmax(0, 1.56fr); }
+  #app.tall .ghead { padding-top: 3px; }
+  #app.tall .ghead p { display: none; }
+  .lines .sent { font-size: 14px; line-height: 1.55; margin-bottom: 3px; }
+  .lines .slot { line-height: 1.3; }
+  .opts.idea { gap: 6px; }
+  .opts.idea .opt { padding: 5px 8px; font-size: 13.5px; line-height: 1.25; }
+  .qp { font-size: 15px; }
+  .lines .sent .n { width: 1.1em; }
+  .slot { min-width: 4.8em; }
+  .bank { gap: 6px; }
+  .bank .chip { padding: 4px 11px; }
+}
+.foot { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+.fb { flex: 1; margin: 0; font-size: clamp(13px, 3.6vw, 15px); min-width: 0; }
+.fb.good b:first-child { color: var(--good); } .fb.bad b:first-child { color: var(--bad); }
+@keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent); } 50% { box-shadow: 0 0 0 6px transparent; } }
+@media (prefers-reduced-motion: no-preference) { .pulse { animation: pulse 1.2s ease-in-out infinite; } }
+
+/* pick lists */
+.opts { display: grid; gap: 8px; }
+.opts.pct { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.opt { border: 2px solid var(--line); background: var(--surface); padding: 10px 8px; cursor: pointer; font-weight: 700; text-align: left; }
+.opts.pct .opt { text-align: center; font-size: clamp(17px, 5vw, 22px); padding: 12px 4px; }
+.opts.idea .opt { font-weight: 400; font-size: clamp(13.5px, 3.7vw, 15px); padding: 7px 10px; }
+.opt.bad { background: var(--bad-soft); border-color: var(--bad); text-decoration: line-through; cursor: default; }
+.opt.good { background: var(--good-soft); border-color: var(--good); }
+.opt:not(:disabled):hover { border-color: var(--accent); }
+
+/* sentences with slots */
+.sent { margin: 0; font-size: clamp(14.5px, 4vw, 17px); line-height: 2.05; }
+.lines { display: grid; gap: 0; }
+.lines .sent { line-height: 1.9; }
+.lines .sent .n { display: inline-block; width: 1.4em; font-weight: 700; color: var(--muted); }
+.slot { display: inline-block; min-width: 5.6em; padding: 0 6px; line-height: 1.5; text-align: center; border: 2px dashed var(--accent); background: var(--accent-soft); cursor: pointer; font-weight: 700; vertical-align: baseline; }
+.slot.act { border-style: solid; outline: 3px solid var(--hot); outline-offset: 1px; }
+.slot.full { border-style: solid; background: var(--surface); }
+.slot.ok { border: 2px solid var(--good); background: var(--good-soft); cursor: default; }
+.slot.over { background: var(--hot); color: #fff; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
+.shake { animation: shake .4s; border-color: var(--bad) !important; background: var(--bad-soft) !important; }
+.choices, .bank { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.chip { border: 2px solid var(--ink); background: var(--surface); padding: 6px 14px; font-weight: 700; cursor: grab; touch-action: none; user-select: none; }
+.chip.sel { background: var(--hot); border-color: var(--hot); color: #fff; }
+.choices .chip { cursor: pointer; touch-action: manipulation; }
+.ghost { position: fixed; z-index: 50; pointer-events: none; transform: translate(-50%, -60%) rotate(-3deg); box-shadow: 0 6px 16px rgba(0, 0, 0, .3); }
+
+/* shooting range */
+.range { position: relative; height: 100%; min-height: 120px; overflow: hidden; background: repeating-linear-gradient(0deg, var(--surface) 0 38px, var(--grid) 38px 39px); border: 1px solid var(--line); cursor: crosshair; }
+.tgt { position: absolute; left: 0; top: 0; border: 2px solid var(--ink); background: #FFF6D8; padding: 5px 12px; font-weight: 700; font-size: clamp(14px, 4vw, 17px); cursor: crosshair; white-space: nowrap; will-change: transform; }
+.tgt.miss { background: var(--bad-soft); border-color: var(--bad); text-decoration: line-through; opacity: .55; pointer-events: none; }
+.tgt.hit { background: var(--good); border-color: var(--good); color: #fff; }
+.boom { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; border: 3px solid var(--hot); border-radius: 50%; pointer-events: none; animation: boom .45s ease-out forwards; }
+@keyframes boom { from { transform: scale(.2); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+
+/* end card */
+.endc { display: grid; gap: 10px; justify-items: center; text-align: center; align-content: center; }
+.endc h2 { margin: 0; font-size: clamp(20px, 6vw, 28px); }
+.endc p { margin: 0; }
+.endc .big { font-size: clamp(16px, 5vw, 22px); }
+
+/* fox game */
+#fox { position: fixed; inset: 0; z-index: 30; background: #10180F; }
+#fc { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.fhud { position: absolute; top: calc(8px + env(safe-area-inset-top, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); display: flex; justify-content: space-between; align-items: center; pointer-events: none; }
+.fhud > * { pointer-events: auto; }
+#eaten { background: rgba(255, 255, 255, .88); border: 2px solid var(--ink); padding: 4px 12px; font-weight: 700; font-size: 18px; font-variant-numeric: tabular-nums; }
+#eatw { position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%); display: grid; gap: 6px; justify-items: center; }
+#eat { font: 700 clamp(30px, 9vw, 54px)/1 var(--font); padding: 14px 34px; background: var(--hot); color: #fff; border: 4px solid #fff; cursor: pointer; letter-spacing: .04em; }
+@keyframes eatp { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+#eat { animation: eatp .35s ease-in-out infinite; }
+#eatbar { width: 180px; height: 10px; background: rgba(255, 255, 255, .5); border: 2px solid #fff; }
+#eatbar i { display: block; height: 100%; background: #fff; }
+.dirs { position: absolute; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); display: flex; justify-content: space-between; pointer-events: none; }
+.dir { pointer-events: auto; width: 74px; height: 64px; font-size: 30px; background: rgba(255, 255, 255, .82); border: 3px solid var(--ink); cursor: pointer; touch-action: none; user-select: none; -webkit-user-select: none; }
+.dir.on { background: var(--hot); color: #fff; }
+.fhelp { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); margin: 0; color: #fff; font-weight: 700; text-shadow: 0 1px 3px #000; text-align: center; font-size: 14px; width: min(60%, 420px); pointer-events: none; }
+#gj { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 28px; }
+#gj p { margin: 0; font: 700 clamp(56px, 16vw, 150px)/1 var(--font); color: #F4F1E6; }
+@keyframes wig { 0% { transform: rotate(-5deg) scale(1); } 25% { transform: rotate(5deg) scale(1.06); } 50% { transform: rotate(-3deg) scale(.97); } 75% { transform: rotate(4deg) scale(1.04); } 100% { transform: rotate(-5deg) scale(1); } }
+#gj p { animation: wig .9s ease-in-out infinite; }
+#gj div { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+@media (prefers-reduced-motion: reduce) { #eat, #gj p { animation-duration: 3s; } }
+</style>
+
+<div id="app">
+  <header id="bar">
+    <h1>Selection Sentences</h1>
+    <div class="prog"><div class="pbar" aria-hidden="true"><i id="pfill"></i></div><span class="count" id="pcount"></span></div>
+    <span class="count" id="score"></span>
+    <button type="button" class="btn fox" id="foxBtn" hidden>Fox<span class="long"> Run</span></button>
+  </header>
+  <section id="graph" aria-label="Population graph"><div class="ghead" id="ghead"></div><div id="plot"></div></section>
+  <section id="deck"><div class="panel" id="panel" aria-live="polite"></div></section>
+</div>
+
+<div id="fox" hidden>
+  <canvas id="fc" aria-label="Fox Run: a fox chasing rabbits, mice and squirrels through a forest"></canvas>
+  <div class="fhud"><span id="eaten">Eaten 0 / 20</span><button type="button" class="btn" id="fxBack">Back to review</button></div>
+  <div id="eatw" hidden><button type="button" id="eat">EAT!</button><div id="eatbar"><i></i></div></div>
+  <div class="dirs"><button type="button" class="dir" id="dl" aria-label="Run left">◀</button><button type="button" class="dir" id="dr" aria-label="Run right">▶</button></div>
+  <p class="fhelp" id="fhelp">Run with ◀ ▶ or the arrow keys. Catch an animal, then hit EAT fast (or press Space).</p>
+  <div id="gj" hidden><p>good job.</p><div><button type="button" class="btn pri" id="gjAgain">Play again</button><button type="button" class="btn" id="gjBack">Back to review</button></div></div>
+</div>
+
+<script>
+(function () {
+'use strict';
+var $ = function (s, r) { return (r || document).querySelector(s); };
+function inv(a) { return a.map(function (v) { return 100 - v; }); }
+var S1 = 'var(--s1)', S2 = 'var(--s2)';
+
+/* ---------- scenarios: graph + four questions each ---------- */
+var SC = [
+  { title: 'Snowshoe hares', what: 'Snow came a month early. Owls hunt the hares across the white snow.',
+    series: [{ n: 'White fur', c: S1, d: [20, 24, 30, 38, 47, 56, 64, 71, 77, 82, 85] }, { n: 'Brown fur', c: S2 }],
+    qs: [
+      { t: 'shoot', tag: 'Shoot the word', p: 'Shoot the selection pressure.', targets: ['Owls on snow', 'White fur', 'Brown fur', 'Generations'], a: 'Owls on snow',
+        why: 'A selection pressure is something in the environment that makes some variants more likely to survive. Here it is owls hunting on white snow.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'What percent of the hares had white fur in generation 0?', o: ['10%', '20%', '50%', '80%'], a: '20%',
+        why: 'Find generation 0 on the white fur line. It starts at 20%.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'What percent of the hares had white fur in generation 10?', o: ['20%', '55%', '85%', '100%'], a: '85%',
+        why: 'The white fur line ends at 85% in generation 10. It went up from 20%.' },
+      { t: 'drag', tag: 'Drag the words', p: 'Build the four-step explanation for white fur.',
+        lines: [['Owls hunting on snow make white fur ', { a: 'helpful' }, '.'], ['So white fur ', { a: 'increases' }, ' survival.'], ['Survivors pass white fur to their ', { a: 'offspring' }, '.'], ['So the percentage of white fur in the population goes ', { a: 'up' }, '.']],
+        bank: ['helpful', 'harmful', 'increases', 'decreases', 'offspring', 'owls', 'up', 'down'],
+        why: 'Pressure makes the trait helpful, so survival increases, survivors pass it to offspring, and the percentage goes up.' }] },
+  { title: 'Island finches', what: 'A drought killed the plants with small, soft seeds. Only large, hard seeds are left.',
+    series: [{ n: 'Deep beak', c: S1, d: [35, 38, 44, 51, 58, 64, 69, 73, 76, 78, 80] }, { n: 'Shallow beak', c: S2 }],
+    qs: [
+      { t: 'fill', tag: 'Fill in the blank', p: 'Choose the word for the blank.', parts: ['The drought makes deep beaks ', { o: ['helpful', 'harmful'], a: 'helpful' }, '.'],
+        why: 'Deep beaks can crack the large, hard seeds that are left, so deep beaks are helpful.' },
+      { t: 'fill', tag: 'Fill in the blank', p: 'Choose the word for the blank.', parts: ['So shallow beaks ', { o: ['increase', 'decrease'], a: 'decrease' }, ' survival.'],
+        why: 'Shallow beaks cannot crack the hard seeds, so finches with shallow beaks are less likely to survive.' },
+      { t: 'pick', kind: 'idea', tag: 'The right idea', p: 'Which sentence explains why deep beaks went up?',
+        o: ['Finches grew deeper beaks because they needed to crack hard seeds.', 'Finches with deep beaks survived more and passed deep beaks to their offspring.', 'Each finch\'s beak got stronger from cracking seeds.', 'The drought made new deep-beaked finches appear.'],
+        a: 'Finches with deep beaks survived more and passed deep beaks to their offspring.',
+        why: 'No finch changed its own beak. Deep-beaked finches were already there; more of them survived and passed deep beaks on.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'How many percentage points did deep beaks go up from generation 0 to generation 10?', o: ['35', '45', '80', '115'], a: '45',
+        why: 'Deep beaks went from 35% to 80%. 80 − 35 = 45 percentage points.' }] },
+  { title: 'Red-finned minnows', what: 'Herons moved to the lake. Bright red fins are easy to spot from above.',
+    series: [{ n: 'Red fins', c: S2, d: [60, 56, 51, 46, 40, 34, 29, 24, 20, 17, 15] }, { n: 'Silver fins', c: S1 }],
+    qs: [
+      { t: 'shoot', tag: 'Shoot the word', p: 'Herons make bright red fins ____. Shoot the missing word.', targets: ['helpful', 'harmful', 'stronger', 'faster'], a: 'harmful',
+        why: 'Herons can see red fins easily, so red fins are harmful.' },
+      { t: 'drag', tag: 'Drag the words', p: 'Build the four-step explanation for red fins.',
+        lines: [['Herons make red fins ', { a: 'harmful' }, '.'], ['So red fins ', { a: 'decrease' }, ' survival.'], ['Fewer red-finned fish survive to pass red fins to their ', { a: 'offspring' }, '.'], ['So the percentage of red fins in the population goes ', { a: 'down' }, '.']],
+        bank: ['helpful', 'harmful', 'increase', 'decrease', 'offspring', 'herons', 'up', 'down'],
+        why: 'A harmful trait decreases survival, fewer fish pass it to offspring, and its percentage goes down.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'In which generation did red fins first drop below 50%?', o: ['Generation 1', 'Generation 3', 'Generation 6', 'Generation 10'], a: 'Generation 3',
+        why: 'Red fins were 51% in generation 2 and 46% in generation 3.' },
+      { t: 'fill', tag: 'Fill in the blank', p: 'Choose the word for the blank.', parts: ['So the percentage of silver fins in the population goes ', { o: ['up', 'down'], a: 'up' }, '.'],
+        why: 'Silver fins are harder for herons to see, so they are helpful and their percentage goes up, from 40% to 85%.' }] },
+  { title: 'Bacteria in a patient', what: 'A patient takes an antibiotic. It kills bacteria that cannot resist it.',
+    series: [{ n: 'Resistant', c: S2, d: [5, 15, 32, 52, 68, 80, 88, 92, 95, 97, 98] }, { n: 'Not resistant', c: S1 }],
+    qs: [
+      { t: 'shoot', tag: 'Shoot the word', p: 'Shoot the selection pressure.', targets: ['Antibiotic', 'Resistance', 'Bacteria', 'Offspring'], a: 'Antibiotic',
+        why: 'The antibiotic is the thing in the environment that decides which bacteria survive.' },
+      { t: 'pick', kind: 'idea', tag: 'The right idea', p: 'Which sentence explains why resistant bacteria went up?',
+        o: ['The antibiotic turned the bacteria into resistant bacteria.', 'Bacteria that were already resistant survived and passed resistance to their offspring.', 'The bacteria learned how to resist the antibiotic.', 'Resistant bacteria tried harder to survive.'],
+        a: 'Bacteria that were already resistant survived and passed resistance to their offspring.',
+        why: 'The antibiotic did not create resistance. A few bacteria already had it; they survived and passed it on.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'What percent of the bacteria were resistant in generation 0?', o: ['5%', '15%', '50%', '98%'], a: '5%',
+        why: 'Resistant bacteria were rare at first, only 5%. They were already in the population before the antibiotic.' },
+      { t: 'shoot', tag: 'Shoot the word', p: 'Survivors pass resistance to their ____. Shoot the missing word.', targets: ['offspring', 'predators', 'antibiotic', 'environment'], a: 'offspring',
+        why: 'Traits are inherited: surviving bacteria pass resistance to their offspring.' }] },
+  { title: 'Periwinkle snails', what: 'Shore crabs arrived on the beach. Crabs crush thin shells easily.',
+    series: [{ n: 'Thick shell', c: S1, d: [30, 33, 38, 45, 52, 59, 65, 70, 74, 76, 78] }, { n: 'Thin shell', c: S2 }],
+    qs: [
+      { t: 'drag', tag: 'Drag the words', p: 'Build the four-step explanation for thick shells.',
+        lines: [['Shore crabs make thick shells ', { a: 'helpful' }, '.'], ['So thick shells ', { a: 'increase' }, ' survival.'], ['Survivors pass thick shells to their ', { a: 'offspring' }, '.'], ['So the percentage of thick shells in the population goes ', { a: 'up' }, '.']],
+        bank: ['helpful', 'harmful', 'increase', 'decrease', 'offspring', 'crabs', 'up', 'down'],
+        why: 'Crabs make thick shells helpful, so survival increases, survivors pass thick shells on, and the percentage goes up.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'What percent of the snails had THIN shells in generation 10?', o: ['22%', '30%', '70%', '78%'], a: '22%',
+        why: 'Read the thin shell line, not the thick one. It ends at 22%.' },
+      { t: 'fill', tag: 'Fill in the blanks', p: 'Choose the word for each blank.', parts: ['Shore crabs make thin shells ', { o: ['helpful', 'harmful'], a: 'harmful' }, ', so thin shells ', { o: ['increase', 'decrease'], a: 'decrease' }, ' survival.'],
+        why: 'Crabs crush thin shells, so thin shells are harmful and decrease survival.' },
+      { t: 'shoot', tag: 'Shoot the word', p: 'Shoot the trait that is helpful.', targets: ['Thick shell', 'Thin shell', 'Shore crabs', 'Seaweed'], a: 'Thick shell',
+        why: 'Thick shells resist the crabs. Shore crabs are the selection pressure, not a trait.' }] },
+  { title: 'Greenhouse ladybugs', what: 'Ladybugs live in a greenhouse with no birds or other predators and plenty of food.',
+    series: [{ n: '7 spots', c: S1, d: [48, 52, 47, 50, 55, 51, 46, 49, 53, 50, 48] }, { n: '2 spots', c: S2 }],
+    qs: [
+      { t: 'shoot', tag: 'Shoot the word', p: 'Shoot the selection pressure on spot pattern.', targets: ['No selection pressure', 'Birds', 'Spots', 'Food'], a: 'No selection pressure',
+        why: 'There are no predators and food is plentiful, so nothing makes one spot pattern helpful or harmful.' },
+      { t: 'pick', kind: 'idea', tag: 'The right idea', p: 'Why did the percentages wiggle but neither pattern take over?',
+        o: ['Nothing makes one pattern helpful or harmful, so both survive and reproduce about equally.', 'Both spot patterns are harmful.', 'The ladybugs chose which spots to have.', '7-spot ladybugs are getting ready to take over.'],
+        a: 'Nothing makes one pattern helpful or harmful, so both survive and reproduce about equally.',
+        why: 'With no selection pressure, the percentages only drift up and down by chance.' },
+      { t: 'pick', kind: 'pct', tag: 'Read the graph', p: 'About what percent of the ladybugs had 2 spots in generation 10?', o: ['10%', '52%', '90%', '100%'], a: '52%',
+        why: 'The 2-spot line ends at 52%, about where it started.' },
+      { t: 'fill', tag: 'Fill in the blank', p: 'Choose the words for the blank.', parts: ['With no selection pressure, the percentage of each pattern ', { o: ['goes up and down by chance', 'goes steadily up', 'drops to zero'], a: 'goes up and down by chance' }, '.'],
+        why: 'Without a pressure, no pattern is favored, so the percentages wander by chance.' }] }
+];
+SC.forEach(function (s) { s.series[1].d = inv(s.series[0].d); });
+var Q = []; SC.forEach(function (s, si) { s.qs.forEach(function (q) { q.si = si; Q.push(q); }); });
+
+function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+
+var KEY = 'selection-sentences-v1', saved = {};
+try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
+
+var cur = -1, first = 0, shownSI = -1, panel = $('#panel'), raf = 0;
+
+/* ---------- graph ---------- */
+function drawGraph() {
+  var si = cur < Q.length ? Q[cur].si : SC.length - 1, sc = SC[si], box = $('#plot'), W = box.clientWidth, H = box.clientHeight;
+  $('#ghead').innerHTML = '<h2>' + sc.title + '</h2><p><b>What happened:</b> ' + sc.what + '</p>';
+  if (W < 50 || H < 50) { box.innerHTML = ''; return; }
+  var narrow = W < 480, m = { l: 40, r: narrow ? 92 : 118, t: 10, b: 32 }, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  function X(g) { return m.l + g / 10 * pw; } function Y(v) { return m.t + (1 - v / 100) * ph; }
+  var step = ph > 150 ? 10 : 20, s = '<svg width="' + W + '" height="' + H + '" role="img" aria-label="' + sc.title + ' graph of percent of population over 10 generations">';
+  for (var v = 0; v <= 100; v += 10) {
+    s += '<line x1="' + m.l + '" x2="' + (m.l + pw) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="' + (v % 50 ? 'var(--grid)' : 'var(--line)') + '" stroke-width="1"/>';
+    if (v % step === 0) s += '<text x="' + (m.l - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end" font-size="11" fill="var(--muted)">' + v + '%</text>';
+  }
+  for (var g = 0; g <= 10; g++) {
+    s += '<line x1="' + X(g) + '" x2="' + X(g) + '" y1="' + m.t + '" y2="' + (m.t + ph) + '" stroke="var(--grid)" stroke-width="1"/>';
+    if (!narrow || g % 2 === 0) s += '<text x="' + X(g) + '" y="' + (m.t + ph + 15) + '" text-anchor="middle" font-size="11" fill="var(--muted)">' + g + '</text>';
+  }
+  s += '<text x="' + (m.l + pw / 2) + '" y="' + (H - 3) + '" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">Generation</text>';
+  s += '<line x1="' + m.l + '" x2="' + m.l + '" y1="' + m.t + '" y2="' + (m.t + ph) + '" stroke="var(--ink)" stroke-width="1.5"/><line x1="' + m.l + '" x2="' + (m.l + pw) + '" y1="' + (m.t + ph) + '" y2="' + (m.t + ph) + '" stroke="var(--ink)" stroke-width="1.5"/>';
+  var labs = sc.series.map(function (sr) { return { y: Y(sr.d[10]), sr: sr }; }).sort(function (a, b) { return a.y - b.y; });
+  if (labs[1].y - labs[0].y < 18) { var mid = (labs[0].y + labs[1].y) / 2; labs[0].y = mid - 9; labs[1].y = mid + 9; }
+  sc.series.forEach(function (sr) {
+    s += '<polyline fill="none" stroke="' + sr.c + '" stroke-width="3" stroke-linejoin="round" points="' + sr.d.map(function (v, i) { return X(i).toFixed(1) + ',' + Y(v).toFixed(1); }).join(' ') + '"/>';
+    sr.d.forEach(function (v, i) { s += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(v).toFixed(1) + '" r="3.6" fill="' + sr.c + '" stroke="var(--surface)" stroke-width="1.5"/>'; });
+  });
+  labs.forEach(function (l) { s += '<text x="' + (X(10) + 8) + '" y="' + (l.y + 4) + '" font-size="' + (narrow ? 12 : 13) + '" font-weight="700" fill="' + l.sr.c + '">' + l.sr.n + '</text>'; });
+  box.innerHTML = s + '</svg>';
+}
+
+/* ---------- question panel ---------- */
+function bar() {
+  var n = Math.min(cur + 1, Q.length);
+  $('#pfill').style.width = (Math.min(cur, Q.length) / Q.length * 100) + '%';
+  $('#pcount').textContent = cur < Q.length ? n + ' / ' + Q.length : 'Done';
+  $('#score').innerHTML = '<span class="lbl">First try: </span>' + first;
+  $('#foxBtn').hidden = !saved.fox;
+}
+function frame(q, body, actions) {
+  panel.innerHTML = '<div class="qhead"><span class="qtag">Question ' + (cur + 1) + ' · ' + q.tag + '</span><p class="qp">' + esc(q.p) + '</p></div><div class="body">' + body + '</div><div class="foot"><p class="fb" id="fb"></p><span id="act">' + (actions || '') + '</span></div>';
+}
+function fb(h, c) { var e = $('#fb'); e.className = 'fb ' + (c || ''); e.innerHTML = h; }
+function miss(q, h) { q.miss = (q.miss || 0) + 1; fb('<b>Not yet.</b> ' + h, 'bad'); }
+function done(q) {
+  q.done = true; if (!q.miss) first++;
+  cancelAnimationFrame(raf);
+  fb('<b>' + (q.miss ? 'Got it.' : 'Correct!') + '</b> ' + esc(q.why), 'good');
+  $('#act').innerHTML = '<button type="button" class="btn pri pulse" id="next">' + (cur + 1 < Q.length ? 'Next →' : 'Finish →') + '</button>';
+  $('#next').addEventListener('click', next); $('#next').focus({ preventScroll: true }); bar();
+}
+
+function next() {
+  cancelAnimationFrame(raf);
+  panel.classList.add('out');
+  setTimeout(function () {
+    cur++; panel.classList.remove('out'); panel.classList.add('in');
+    var si = cur < Q.length ? Q[cur].si : shownSI;
+    if (si !== shownSI) { $('#graph').classList.add('fade'); setTimeout(function () { shownSI = si; drawGraph(); $('#graph').classList.remove('fade'); }, 250); }
+    render(); bar();
+    void panel.offsetWidth; panel.classList.remove('in');
+  }, 430);
+}
+
+/* swipe left to advance when a question is done */
+(function () {
+  var sx = null;
+  panel.addEventListener('pointerdown', function (e) { sx = (cur < Q.length && Q[cur].done) ? e.clientX : null; });
+  panel.addEventListener('pointerup', function (e) { if (sx != null && e.clientX - sx < -70) next(); sx = null; });
+})();
+
+function render() {
+  if (cur >= Q.length) return endCard();
+  var q = Q[cur]; q.miss = 0; q.done = false;
+  var tall = q.t === 'drag' || q.kind === 'idea', app = $('#app'); if (app.classList.contains('tall') !== tall) { app.classList.toggle('tall', tall); drawGraph(); }
+  ({ pick: rPick, shoot: rShoot, fill: rFill, drag: rDrag })[q.t](q);
+}
+
+function rPick(q) {
+  var o = shuffle(q.o);
+  frame(q, '<div class="opts ' + q.kind + '">' + o.map(function (t) { return '<button type="button" class="opt">' + esc(t) + '</button>'; }).join('') + '</div>');
+  Array.prototype.forEach.call(panel.querySelectorAll('.opt'), function (b) {
+    b.addEventListener('click', function () {
+      if (q.done) return;
+      if (b.textContent === q.a) { b.classList.add('good'); Array.prototype.forEach.call(panel.querySelectorAll('.opt'), function (x) { x.disabled = true; }); done(q); }
+      else { b.classList.add('bad'); b.disabled = true; miss(q, q.kind === 'pct' ? 'Find the right line and the right generation on the graph, then try again.' : 'That sentence has a misconception. No living thing changes its own traits on purpose. Try again.'); }
+    });
+  });
+}
+
+function rShoot(q) {
+  frame(q, '<div class="range" id="range"></div>');
+  var rg = $('#range'), H = rg.clientHeight, W = rg.clientWidth, ts = shuffle(q.targets), rows = ts.length, slow = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.45 : 1;
+  var items = ts.map(function (t, i) {
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'tgt'; b.textContent = t; rg.appendChild(b);
+    var w = b.offsetWidth, h = b.offsetHeight, dir = i % 2 ? -1 : 1;
+    return { el: b, t: t, w: w, y: Math.max(2, (H / rows) * i + (H / rows - h) / 2), x: Math.random() * Math.max(10, W - w), v: dir * (55 + Math.random() * 45 + 12 * i) * slow };
+  });
+  var last = performance.now();
+  function tick(now) {
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    items.forEach(function (it) {
+      if (!it.hit) { it.x += it.v * dt; if (it.x > W) it.x = -it.w; if (it.x < -it.w) it.x = W; }
+      it.el.style.transform = 'translate(' + it.x.toFixed(1) + 'px,' + it.y.toFixed(1) + 'px)';
+    });
+    raf = requestAnimationFrame(tick);
+  }
+  raf = requestAnimationFrame(tick);
+  items.forEach(function (it) {
+    it.el.addEventListener('pointerdown', function (e) {
+      if (q.done || it.miss) return; e.preventDefault();
+      var r = rg.getBoundingClientRect(), bm = document.createElement('span'); bm.className = 'boom'; bm.style.left = (e.clientX - r.left) + 'px'; bm.style.top = (e.clientY - r.top) + 'px'; rg.appendChild(bm); setTimeout(function () { bm.remove(); }, 500);
+      if (it.t === q.a) { it.hit = true; it.el.classList.add('hit'); done(q); }
+      else { it.miss = true; it.el.classList.add('miss'); miss(q, '“' + esc(it.t) + '” is not it. Keep aiming.'); }
+    });
+    it.el.addEventListener('click', function (e) { if (e.detail === 0) it.el.dispatchEvent(new PointerEvent('pointerdown', { clientX: it.el.getBoundingClientRect().left + 10, clientY: it.el.getBoundingClientRect().top + 10 })); });
+  });
+}
+
+/* fill: tap a choice for each blank */
+function rFill(q) {
+  var blanks = q.parts.filter(function (p) { return typeof p === 'object'; });
+  q.v = blanks.map(function () { return null; }); q.ok = blanks.map(function () { return false; }); q.act = 0; q.bad = {};
+  frame(q, '<p class="sent" id="sent"></p><div class="choices" id="choices"></div>', '<button type="button" class="btn pri" id="chk" disabled>Check</button>');
+  $('#chk').addEventListener('click', function () {
+    var wrong = 0; q.bad = {};
+    blanks.forEach(function (b, i) { if (q.ok[i]) return; if (q.v[i] === b.a) q.ok[i] = true; else { q.bad[i] = 1; q.v[i] = null; wrong++; } });
+    if (wrong) { miss(q, wrong === 1 ? 'The blank in red is wrong. Choose again.' : 'The blanks in red are wrong. Choose again.'); q.act = q.ok.indexOf(false); }
+    paint(); if (!wrong) { $('#chk').disabled = true; done(q); }
+  });
+  function paint() {
+    var bi = 0;
+    $('#sent').innerHTML = q.parts.map(function (p) {
+      if (typeof p === 'string') return esc(p);
+      var i = bi++, c = q.ok[i] ? 'ok' : (q.v[i] ? 'full' : '') + (i === q.act && !q.ok[i] && !q.done ? ' act' : '') + (q.bad[i] ? ' shake' : '');
+      return '<span class="slot ' + c + '" data-b="' + i + '" tabindex="0" role="button" aria-label="Blank ' + (i + 1) + (q.v[i] ? ': ' + q.v[i] : '') + '">' + (q.v[i] ? esc(q.v[i]) : '?') + '</span>';
+    }).join('');
+    var b = blanks[q.act];
+    $('#choices').innerHTML = (q.done || !b || q.ok[q.act]) ? '' : shuffleOnce(b).map(function (o) { return '<button type="button" class="chip">' + esc(o) + '</button>'; }).join('');
+    Array.prototype.forEach.call($('#choices').children, function (c) { c.addEventListener('click', function () { q.v[q.act] = c.textContent; q.bad = {}; var nx = q.v.indexOf(null); q.act = nx >= 0 ? nx : q.act; paint(); }); });
+    Array.prototype.forEach.call($('#sent').querySelectorAll('.slot'), function (s) { function go() { var i = +s.dataset.b; if (q.ok[i] || q.done) return; q.act = i; paint(); } s.addEventListener('click', go); s.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }); });
+    if ($('#chk')) $('#chk').disabled = q.done || q.v.some(function (v, i) { return !v && !q.ok[i]; });
+  }
+  function shuffleOnce(b) { return b._o || (b._o = shuffle(b.o)); }
+  paint();
+}
+
+/* drag: drag or tap words from the bank into the slots */
+function rDrag(q) {
+  var slots = []; q.lines.forEach(function (l) { l.forEach(function (p) { if (typeof p === 'object') slots.push(p); }); });
+  q.fill = slots.map(function () { return null; }); q.ok = slots.map(function () { return false; }); q.sel = null; q.bad = {};
+  var bank = shuffle(q.bank).map(function (w, i) { return { id: i, w: w }; });
+  frame(q, '<div class="lines" id="lines"></div><div class="bank" id="bank"></div>', '<button type="button" class="btn pri" id="chk" disabled>Check</button>');
+  function used(id) { return q.fill.indexOf(id) >= 0; }
+  function place(si, id) { if (q.ok[si]) return; var was = q.fill.indexOf(id); if (was >= 0) q.fill[was] = null; q.fill[si] = id; q.sel = null; q.bad = {}; paint(); }
+  function paint() {
+    var k = 0;
+    $('#lines').innerHTML = q.lines.map(function (l, li) {
+      return '<p class="sent"><span class="n">' + (li + 1) + '</span>' + l.map(function (p) {
+        if (typeof p === 'string') return esc(p);
+        var i = k++, w = q.fill[i] != null ? bank[q.fill[i]].w : '', c = q.ok[i] ? 'ok' : (w ? 'full' : '') + (q.bad[i] ? ' shake' : '');
+        return '<span class="slot ' + c + '" data-s="' + i + '" tabindex="0" role="button" aria-label="Slot ' + (i + 1) + (w ? ': ' + w : ', empty') + '">' + (w ? esc(w) : '&nbsp;') + '</span>';
+      }).join('') + '</p>';
+    }).join('');
+    $('#bank').innerHTML = q.done ? '' : bank.filter(function (b) { return !used(b.id); }).map(function (b) { return '<button type="button" class="chip' + (q.sel === b.id ? ' sel' : '') + '" data-id="' + b.id + '">' + esc(b.w) + '</button>'; }).join('');
+    Array.prototype.forEach.call($('#lines').querySelectorAll('.slot'), function (s) {
+      function go() { var i = +s.dataset.s; if (q.ok[i] || q.done) return; if (q.sel != null) place(i, q.sel); else if (q.fill[i] != null) { q.fill[i] = null; paint(); } }
+      s.addEventListener('click', go); s.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
+    Array.prototype.forEach.call($('#bank').children, function (c) { wireChip(c); });
+    $('#chk').disabled = q.done || q.fill.some(function (v, i) { return v == null && !q.ok[i]; });
+  }
+  function wireChip(c) {
+    var id = +c.dataset.id, st = null, ghost = null, over = null;
+    c.addEventListener('pointerdown', function (e) { st = { x: e.clientX, y: e.clientY }; c.setPointerCapture(e.pointerId); });
+    c.addEventListener('pointermove', function (e) {
+      if (!st) return;
+      if (!ghost && Math.hypot(e.clientX - st.x, e.clientY - st.y) > 6) { ghost = c.cloneNode(true); ghost.classList.add('ghost', 'sel'); document.body.appendChild(ghost); c.style.opacity = '.35'; }
+      if (ghost) {
+        ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+        var el = document.elementFromPoint(e.clientX, e.clientY), s = el && el.closest ? el.closest('.slot') : null;
+        if (over && over !== s) over.classList.remove('over'); if (s && !s.classList.contains('ok')) { s.classList.add('over'); over = s; } else over = null;
+      }
+    });
+    function end(e) {
+      if (!st) return; var wasDrag = !!ghost; st = null;
+      if (ghost) { ghost.remove(); ghost = null; c.style.opacity = ''; }
+      if (over) { over.classList.remove('over'); var si = +over.dataset.s; over = null; return place(si, id); }
+      if (!wasDrag && e.type === 'pointerup') { q.sel = q.sel === id ? null : id; paint(); }
+    }
+    c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+    c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); q.sel = q.sel === id ? null : id; paint(); } });
+  }
+  $('#chk').addEventListener('click', function () {
+    var wrong = 0; q.bad = {};
+    slots.forEach(function (s, i) { if (q.ok[i]) return; if (bank[q.fill[i]].w === s.a) q.ok[i] = true; else { q.bad[i] = 1; q.fill[i] = null; wrong++; } });
+    if (wrong) miss(q, wrong + (wrong === 1 ? ' slot was wrong (red). Its word went back to the bank.' : ' slots were wrong (red). Their words went back to the bank.'));
+    paint(); if (!wrong) { $('#chk').disabled = true; done(q); }
+  });
+  paint();
+}
+
+function endCard() {
+  if ($('#app').classList.contains('tall')) { $('#app').classList.remove('tall'); drawGraph(); }
+  saved.fox = true; save(); bar();
+  panel.innerHTML = '<div class="endc" style="grid-row:1 / -1"><h2>Review complete</h2><p class="big">First try correct: <b>' + first + ' / ' + Q.length + '</b></p><p>Fox Run is unlocked. Catch 20 animals before something big shows up.</p><div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><button type="button" class="btn fox pulse" id="goFox" style="padding:10px 22px;font-size:18px">Play Fox Run</button><button type="button" class="btn" id="again">Review again</button></div></div>';
+  $('#goFox').addEventListener('click', openFox);
+  $('#again').addEventListener('click', function () { first = 0; cur = -1; next(); });
+}
+
+$('#foxBtn').addEventListener('click', openFox);
+var rz; window.addEventListener('resize', function () { clearTimeout(rz); rz = setTimeout(function () { drawGraph(); if (!$('#fox').hidden) sizeFox(); }, 120); });
+
+/* ================= FOX RUN ================= */
+var cv = $('#fc'), cx = cv.getContext('2d'), F = null, fRaf = 0, FW = 0, FH = 0, DPR = 1;
+function sizeFox() { DPR = Math.min(2, window.devicePixelRatio || 1); FW = innerWidth; FH = innerHeight; cv.width = FW * DPR; cv.height = FH * DPR; }
+function hash(i) { var x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); }
+var KINDS = { rabbit: { sp: 285, w: 26 }, squirrel: { sp: 265, w: 22 }, mouse: { sp: 225, w: 14 } };
+
+function openFox() {
+  $('#fox').hidden = false; $('#gj').hidden = true; $('#eatw').hidden = true; $('#fhelp').hidden = false; sizeFox();
+  F = { x: 0, vx: 0, dir: 1, ph: 0, cam: 0, an: [], n: 0, caught: null, eatT: 0, st: 'play', keys: { l: 0, r: 0 }, foot: null, shake: 0, sq: 1, fade: 0, parts: [], t: 0, msgT: 0 };
+  for (var i = 0; i < 4; i++) spawn(i % 2 ? 1 : -1, 260 + i * 220);
+  upd(); cancelAnimationFrame(fRaf); var last = performance.now();
+  (function loop(now) { var dt = Math.min(0.04, (now - last) / 1000); last = now; step(dt); draw(); fRaf = requestAnimationFrame(loop); })(last);
+}
+function closeFox() { cancelAnimationFrame(fRaf); $('#fox').hidden = true; F = null; }
+function upd() { $('#eaten').textContent = 'Eaten ' + F.n + ' / 20'; }
+function spawn(side, dist) {
+  var ks = ['rabbit', 'squirrel', 'mouse'], k = ks[Math.floor(Math.random() * 3)];
+  F.an.push({ k: k, x: F.x + side * (dist || (FW / 2 + 80 + Math.random() * 420)), dir: Math.random() < 0.5 ? -1 : 1, ph: Math.random() * 6, st: 'wander', t: 0, turn: 1 + Math.random() * 2 });
+}
+function step(dt) {
+  F.t += dt;
+  if (F.st === 'play') {
+    var want = (F.keys.r ? 1 : 0) - (F.keys.l ? 1 : 0);
+    if (F.caught) want = 0;
+    F.vx += (want * 360 - F.vx) * Math.min(1, dt * 9);
+    if (want) F.dir = want;
+    F.x += F.vx * dt; F.ph += Math.abs(F.vx) * dt * 0.06;
+    if (Math.abs(F.vx) > 30) $('#fhelp').hidden = true;
+    F.an.forEach(function (a) {
+      var K = KINDS[a.k], d = a.x - F.x, ad = Math.abs(d);
+      a.t += dt;
+      if (a.st === 'wander') {
+        if (a.t > a.turn) { a.t = 0; a.turn = 1 + Math.random() * 2.5; a.dir = Math.random() < 0.5 ? -1 : 1; a.idle = Math.random() < 0.3; }
+        var v = a.idle ? 0 : 45; a.x += a.dir * v * dt; a.ph += v * dt * 0.08;
+        if (ad < 210) a.st = 'flee';
+      } else if (a.st === 'flee') {
+        a.dir = d >= 0 ? 1 : -1; a.x += a.dir * K.sp * dt; a.ph += K.sp * dt * 0.06;
+        if (ad > 430) { a.st = 'wander'; a.t = 0; }
+      } else if (a.st === 'escape') {
+        a.x += a.dir * 620 * dt; a.ph += 620 * dt * 0.06; a.t2 = (a.t2 || 0) + dt; if (a.t2 > 2.5) a.gone = true;
+      } else if (a.st === 'held') { a.ph += dt * 30; }
+      if (!F.caught && (a.st === 'wander' || a.st === 'flee') && ad < 38 + K.w * 0.5) { a.st = 'held'; F.caught = a; F.eatT = 1.3; $('#eatw').hidden = false; $('#eat').focus({ preventScroll: true }); }
+      if (Math.abs(a.x - F.x) > FW * 2.2) a.gone = true;
+    });
+    if (F.caught) {
+      F.eatT -= dt; $('#eatbar i').style.width = Math.max(0, F.eatT / 1.3 * 100) + '%';
+      if (F.eatT <= 0) { var a = F.caught; a.st = 'escape'; a.dir = a.x >= F.x ? 1 : -1; a.t2 = 0; F.caught = null; $('#eatw').hidden = true; F.msg = 'Too slow! It escaped.'; F.msgT = 1.4; }
+    }
+    F.an = F.an.filter(function (a) { return !a.gone; });
+    while (F.an.length < 4) spawn(Math.random() < 0.5 ? -1 : 1);
+  } else if (F.st === 'stomp') {
+    var ft = F.foot;
+    if (!ft.hit) { ft.vy += 4200 * dt; ft.y += ft.vy * dt; if (ft.y >= gY()) { ft.y = gY(); ft.hit = true; ft.t = 0; F.shake = 0.8; for (var i = 0; i < 40; i++) F.parts.push({ x: FW / 2 + (Math.random() - 0.5) * ft.w * 1.6, y: gY(), vx: (Math.random() - 0.5) * 700, vy: -Math.random() * 520, l: 1 + Math.random() * 0.6, r: 4 + Math.random() * 9, dust: 1 }); } }
+    else { ft.t += dt; F.sq = Math.max(0.1, 1 - ft.t * 9); if (ft.t > 1) F.fade = Math.min(1, F.fade + dt / 1.6); if (F.fade >= 1 && $('#gj').hidden) { $('#gj').hidden = false; $('#gjAgain').focus({ preventScroll: true }); } }
+    F.shake = Math.max(0, F.shake - dt);
+  }
+  F.parts.forEach(function (p) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += (p.dust ? 900 : 300) * dt; p.l -= dt; });
+  F.parts = F.parts.filter(function (p) { return p.l > 0; });
+  if (F.msgT > 0) F.msgT -= dt;
+  F.cam += (F.x - F.cam) * Math.min(1, dt * 6);
+}
+function eat() {
+  if (!F || !F.caught) return;
+  var a = F.caught; a.gone = true; F.caught = null; F.n++; $('#eatw').hidden = true; upd();
+  var sx = a.x - F.cam + FW / 2;
+  for (var i = 0; i < 14; i++) F.parts.push({ x: sx, y: gY() - 20, vx: (Math.random() - 0.5) * 300, vy: -100 - Math.random() * 260, l: 0.6 + Math.random() * 0.4, r: 2 + Math.random() * 3, scr: 1 });
+  F.msg = '+1  ' + a.k; F.msgT = 0.9;
+  if (F.n >= 20) { F.st = 'stomp'; F.foot = { y: -FH * 0.2, vy: 300, w: Math.min(FW * 0.62, 560), hit: false }; $('.dirs').hidden = true; }
+}
+function gY() { return FH * 0.78; }
+
+/* ---- drawing ---- */
+function draw() {
+  var c = cx; c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  var sh = F.shake > 0 ? (Math.random() - 0.5) * 22 * F.shake : 0, G = gY(), cam = F.cam - FW / 2;
+  c.save(); c.translate(sh, sh * 0.6);
+  var sky = c.createLinearGradient(0, 0, 0, G); sky.addColorStop(0, '#BFD8E4'); sky.addColorStop(1, '#E4EEDC'); c.fillStyle = sky; c.fillRect(-30, -30, FW + 60, G + 30);
+  c.save(); c.translate(0, G); c.scale(1, F.sq); c.translate(0, -G);
+  layer(cam * 0.25, 64, function (x, h, i) { c.fillStyle = '#A9C4A6'; tri(x, G - 12, 34 + h * 18, 120 + h * 90); });
+  layer(cam * 0.5, 120, function (x, h, i) { c.fillStyle = '#6E5440'; c.fillRect(x - 6, G - 150 - h * 40, 12, 150 + h * 40); c.fillStyle = h > 0.5 ? '#5F8E55' : '#6F9C5C'; blob(x, G - 160 - h * 40, 46 + h * 18); });
+  layer(cam, 230, function (x, h, i) { c.fillStyle = '#4C3826'; c.fillRect(x - 15, -10, 30, G + 10); c.fillStyle = '#3F2E1F'; c.fillRect(x + 6, -10, 5, G + 10); c.fillStyle = '#466F3E'; blob(x - 30, 30 + h * 40, 70); blob(x + 40, 10 + h * 30, 60); c.fillStyle = '#3B5E35'; c.beginPath(); c.ellipse(x, G + 2, 34, 8, 0, 0, Math.PI * 2); c.fill(); });
+  c.fillStyle = '#5B7C34'; c.fillRect(-30, G, FW + 60, FH - G + 30); c.fillStyle = '#7FA34A'; c.fillRect(-30, G - 4, FW + 60, 8);
+  c.fillStyle = '#4C6A2B'; for (var i = Math.floor(cam / 40) - 1; i < Math.floor((cam + FW) / 40) + 2; i++) { var gx = i * 40 - cam + hash(i) * 30; c.fillRect(gx, G + 14 + hash(i + 9) * (FH - G - 30), 10, 3); }
+  F.an.forEach(function (a) { animal(a, a.x - cam, G); });
+  fox(F.x - cam, G, F.dir, F.ph, Math.abs(F.vx) > 20);
+  c.restore();
+  if (F.foot) tfoot(FW / 2, F.foot.y, F.foot.w);
+  F.parts.forEach(function (p) { c.globalAlpha = Math.max(0, Math.min(1, p.l)); c.fillStyle = p.dust ? '#9C8C6A' : '#B23A1C'; c.beginPath(); c.arc(p.x, p.y, p.r, 0, Math.PI * 2); c.fill(); c.globalAlpha = 1; });
+  if (F.msgT > 0) { c.font = '700 26px ' + getComputedStyle(document.body).fontFamily; c.textAlign = 'center'; c.lineWidth = 5; c.strokeStyle = 'rgba(0,0,0,.6)'; c.fillStyle = '#fff'; c.strokeText(F.msg, FW / 2, FH * 0.18); c.fillText(F.msg, FW / 2, FH * 0.18); }
+  c.restore();
+  if (F.fade > 0) { c.fillStyle = 'rgba(16,24,15,' + F.fade + ')'; c.fillRect(0, 0, FW, FH); }
+  function layer(off, sp, fn) { for (var i = Math.floor((off - 100) / sp); i < Math.floor((off + FW + 100) / sp) + 1; i++) fn(i * sp + hash(i * 7 + sp) * sp * 0.5 - off, hash(i * 3 + sp), i); }
+  function tri(x, y, w, h) { c.beginPath(); c.moveTo(x - w, y); c.lineTo(x, y - h); c.lineTo(x + w, y); c.closePath(); c.fill(); }
+  function blob(x, y, r) { c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.arc(x - r * 0.7, y + r * 0.35, r * 0.7, 0, Math.PI * 2); c.arc(x + r * 0.7, y + r * 0.3, r * 0.75, 0, Math.PI * 2); c.fill(); }
+}
+function fox(x, y, dir, ph, run) {
+  var c = cx; c.save(); c.translate(x, y); c.scale(dir, 1);
+  var bob = run ? Math.abs(Math.sin(ph * 2)) * -4 : 0, sw = run ? Math.sin(ph * 2) * 0.6 : 0;
+  c.translate(0, bob);
+  c.strokeStyle = '#2A1A10'; c.lineWidth = 6; c.lineCap = 'round';
+  [[-20, sw], [-12, -sw], [18, -sw], [26, sw]].forEach(function (l) { c.beginPath(); c.moveTo(l[0], -26); c.lineTo(l[0] + Math.sin(l[1]) * 16, -2 - bob); c.stroke(); });
+  c.fillStyle = '#C9541C'; c.beginPath(); c.moveTo(-28, -36); c.bezierCurveTo(-60, -62 + sw * 6, -92, -44, -88, -28); c.bezierCurveTo(-70, -26, -48, -26, -28, -26); c.fill();
+  c.fillStyle = '#F6F0E4'; c.beginPath(); c.ellipse(-84, -32, 9, 6, -0.3, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#D35E22'; c.beginPath(); c.ellipse(0, -34, 36, 15, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#F6F0E4'; c.beginPath(); c.ellipse(24, -26, 12, 7, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#D35E22'; c.beginPath(); c.arc(38, -46, 14, 0, Math.PI * 2); c.fill();
+  c.beginPath(); c.moveTo(46, -52); c.lineTo(66, -42); c.lineTo(46, -38); c.fill();
+  c.fillStyle = '#F6F0E4'; c.beginPath(); c.moveTo(44, -42); c.lineTo(64, -41); c.lineTo(46, -36); c.fill();
+  c.fillStyle = '#1E140C'; c.beginPath(); c.arc(66, -42, 3, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(42, -50, 2.4, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#B4461A'; c.beginPath(); c.moveTo(28, -54); c.lineTo(30, -72); c.lineTo(40, -58); c.fill(); c.beginPath(); c.moveTo(36, -58); c.lineTo(44, -74); c.lineTo(48, -56); c.fill();
+  c.fillStyle = '#2A1A10'; c.beginPath(); c.moveTo(31, -60); c.lineTo(31, -68); c.lineTo(36, -60); c.fill();
+  c.restore();
+}
+function animal(a, x, y) {
+  var c = cx, hop = 0, held = a.st === 'held';
+  c.save(); c.translate(x, y); c.scale(a.dir, 1);
+  if (held) c.rotate(Math.sin(a.ph) * 0.15);
+  if (a.k === 'rabbit') {
+    hop = a.st === 'wander' && a.idle ? 0 : -Math.abs(Math.sin(a.ph * 1.5)) * 14; c.translate(0, hop);
+    c.fillStyle = '#9A8670'; c.beginPath(); c.ellipse(0, -14, 17, 11, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.arc(15, -22, 8, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(13, -38, 3.5, 11, -0.2, 0, Math.PI * 2); c.fill(); c.beginPath(); c.ellipse(19, -37, 3.5, 11, 0.15, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#F4EFE6'; c.beginPath(); c.arc(-17, -16, 5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1D140C'; c.beginPath(); c.arc(19, -23, 1.8, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#7E6C58'; c.fillRect(-8, -5, 10, 5);
+  } else if (a.k === 'squirrel') {
+    hop = a.st === 'wander' && a.idle ? 0 : -Math.abs(Math.sin(a.ph * 1.7)) * 9; c.translate(0, hop);
+    c.fillStyle = '#A0552A'; c.beginPath(); c.moveTo(-8, -10); c.bezierCurveTo(-34, -12, -36, -44, -16, -46); c.bezierCurveTo(-6, -46, -6, -34, -14, -30); c.bezierCurveTo(-22, -22, -14, -14, -6, -14); c.fill();
+    c.fillStyle = '#B5652F'; c.beginPath(); c.ellipse(2, -12, 12, 9, -0.3, 0, Math.PI * 2); c.fill(); c.beginPath(); c.arc(13, -20, 7, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.moveTo(10, -26); c.lineTo(12, -33); c.lineTo(15, -26); c.fill();
+    c.fillStyle = '#F1DFC8'; c.beginPath(); c.ellipse(7, -9, 5, 4, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1D140C'; c.beginPath(); c.arc(16, -21, 1.6, 0, Math.PI * 2); c.fill();
+  } else {
+    c.translate(0, -Math.abs(Math.sin(a.ph * 3)) * 2);
+    c.strokeStyle = '#8B7F79'; c.lineWidth = 1.8; c.beginPath(); c.moveTo(-9, -5); c.quadraticCurveTo(-22, -2 + Math.sin(a.ph * 3) * 4, -26, -9); c.stroke();
+    c.fillStyle = '#8F8681'; c.beginPath(); c.ellipse(0, -6, 10, 6, 0, 0, Math.PI * 2); c.fill(); c.beginPath(); c.moveTo(6, -10); c.lineTo(15, -5); c.lineTo(6, -2); c.fill();
+    c.fillStyle = '#C9A9A3'; c.beginPath(); c.arc(4, -12, 3.5, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#1D140C'; c.beginPath(); c.arc(9, -7, 1.3, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+}
+function tfoot(x, y, w) {
+  var c = cx, h = w * 0.36;
+  c.save(); c.translate(x, y);
+  c.fillStyle = 'rgba(0,0,0,.25)'; if (!F.foot.hit) { var s = Math.max(0, Math.min(1, 1 - (gY() - y) / gY())); c.beginPath(); c.ellipse(0, gY() - y + 4, w * 0.5 * s + 20, 14 * s + 4, 0, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = '#5E6B45'; c.strokeStyle = '#38422A'; c.lineWidth = 4;
+  c.beginPath(); c.moveTo(-w * 0.2, -h - 3000); c.lineTo(-w * 0.24, -h * 0.6); c.lineTo(w * 0.22, -h * 0.6); c.lineTo(w * 0.18, -h - 3000); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#4E5A39'; for (var k = 0; k < 9; k++) { c.beginPath(); c.arc(-w * 0.1 + (k % 3) * w * 0.1, -h * 0.9 - Math.floor(k / 3) * h * 0.35, w * 0.025, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = '#5E6B45'; c.beginPath(); c.ellipse(0, -h * 0.45, w * 0.3, h * 0.32, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+  [[-0.4, -0.35], [0, 0], [0.4, 0.35]].forEach(function (t) {
+    var tx = t[0] * w, ang = t[1];
+    c.save(); c.translate(tx * 0.55, -h * 0.3); c.rotate(ang);
+    c.fillStyle = '#5E6B45'; c.beginPath(); c.ellipse(0, h * 0.06, w * 0.09, h * 0.3, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+    c.fillStyle = '#ECE5D2'; c.beginPath(); c.moveTo(-w * 0.05, h * 0.3); c.quadraticCurveTo(0, h * 0.56, w * 0.05, h * 0.3); c.closePath(); c.fill(); c.stroke();
+    c.restore();
+  });
+  c.restore();
+}
+
+/* controls */
+function hold(btn, k) {
+  function on(e) { e.preventDefault(); if (F) F.keys[k] = 1; btn.classList.add('on'); try { btn.setPointerCapture(e.pointerId); } catch (x) {} }
+  function off() { if (F) F.keys[k] = 0; btn.classList.remove('on'); }
+  btn.addEventListener('pointerdown', on); btn.addEventListener('pointerup', off); btn.addEventListener('pointercancel', off); btn.addEventListener('lostpointercapture', off);
+}
+hold($('#dl'), 'l'); hold($('#dr'), 'r');
+document.addEventListener('keydown', function (e) {
+  if (!F) return;
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { F.keys.l = 1; e.preventDefault(); }
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { F.keys.r = 1; e.preventDefault(); }
+  if ((e.key === ' ' || e.key === 'e' || e.key === 'E' || e.key === 'Enter') && F.caught) { e.preventDefault(); eat(); }
+});
+document.addEventListener('keyup', function (e) {
+  if (!F) return;
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') F.keys.l = 0;
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') F.keys.r = 0;
+});
+$('#eat').addEventListener('pointerdown', function (e) { e.preventDefault(); eat(); });
+$('#eat').addEventListener('click', function (e) { if (e.detail === 0) eat(); });
+$('#fxBack').addEventListener('click', closeFox); $('#gjBack').addEventListener('click', closeFox);
+$('#gjAgain').addEventListener('click', function () { $('.dirs').hidden = false; openFox(); });
+
+window.__ns = { Q: Q, get cur() { return cur; }, get F() { return F; }, eat: eat, openFox: openFox, setN: function (n) { F.n = n; upd(); } };
+
+/* redraw the graph whenever its box changes size (fonts loading, layout switches, rotation) */
+var lastWH = '', roT = 0;
+if (window.ResizeObserver) new ResizeObserver(function () { var b = $('#plot'), wh = b.clientWidth + 'x' + b.clientHeight; if (wh === lastWH) return; lastWH = wh; cancelAnimationFrame(roT); roT = requestAnimationFrame(drawGraph); }).observe($('#plot'));
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { drawGraph(); });
+/* start */
+cur = 0; shownSI = Q[0].si; drawGraph(); render(); bar();
+})();
+</script>
+
+</body></html>
