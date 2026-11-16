@@ -253,7 +253,7 @@ var Q = []; SC.forEach(function (s, si) { s.qs.forEach(function (q) { q.si = si;
 function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
 function esc(t) { return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 
-var KEY = 'selection-sentences-v1', saved = {};
+var KEY = 'selection-sentences-v2', saved = {};
 try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
 function save() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {} }
 
@@ -458,11 +458,18 @@ function rDrag(q) {
   paint();
 }
 
+var NEED = Math.floor(Q.length * 0.9) + 1;   /* above 90%: 22 of 24 */
 function endCard() {
   if ($('#app').classList.contains('tall')) { $('#app').classList.remove('tall'); drawGraph(); }
-  saved.fox = true; save(); bar();
-  panel.innerHTML = '<div class="endc" style="grid-row:1 / -1"><h2>Review complete</h2><p class="big">First try correct: <b>' + first + ' / ' + Q.length + '</b></p><p>Fox Run is unlocked. Catch 20 animals before something big shows up.</p><div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center"><button type="button" class="btn fox pulse" id="goFox" style="padding:10px 22px;font-size:18px">Play Fox Run</button><button type="button" class="btn" id="again">Review again</button></div></div>';
-  $('#goFox').addEventListener('click', openFox);
+  var pct = Math.round(first / Q.length * 100), win = first >= NEED, btns;
+  if (win) { saved.fox = true; save(); }
+  bar();
+  btns = win ? '<button type="button" class="btn fox pulse" id="goFox" style="padding:10px 22px;font-size:18px">Play Fox Run</button><button type="button" class="btn" id="again">Review again</button>'
+             : '<button type="button" class="btn pri pulse" id="again" style="padding:10px 22px;font-size:18px">Start over</button>';
+  panel.innerHTML = '<div class="endc" style="grid-row:1 / -1"><h2>' + (win ? 'Fox Run unlocked!' : 'Not unlocked yet') + '</h2><p class="big">First try correct: <b>' + first + ' / ' + Q.length + '</b> (' + pct + '%)</p><p>' +
+    (win ? 'You scored above 90%. Catch 20 animals before something big shows up.' : 'Fox Run unlocks when you score above 90%: at least ' + NEED + ' of ' + Q.length + ' right on the first try. Start over and answer all ' + Q.length + ' questions again.') +
+    '</p><div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">' + btns + '</div></div>';
+  if (win) $('#goFox').addEventListener('click', openFox);
   $('#again').addEventListener('click', function () { first = 0; cur = -1; next(); });
 }
 
@@ -651,7 +658,7 @@ $('#eat').addEventListener('click', function (e) { if (e.detail === 0) eat(); })
 $('#fxBack').addEventListener('click', closeFox); $('#gjBack').addEventListener('click', closeFox);
 $('#gjAgain').addEventListener('click', function () { $('.dirs').hidden = false; openFox(); });
 
-window.__ns = { Q: Q, get cur() { return cur; }, get F() { return F; }, eat: eat, openFox: openFox, setN: function (n) { F.n = n; upd(); } };
+window.__ns = { _end: function (n) { first = n; cur = Q.length; endCard(); }, Q: Q, get cur() { return cur; }, get F() { return F; }, eat: eat, openFox: openFox, setN: function (n) { F.n = n; upd(); } };
 
 /* redraw the graph whenever its box changes size (fonts loading, layout switches, rotation) */
 var lastWH = '', roT = 0;
